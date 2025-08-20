@@ -1,0 +1,19 @@
+npmのインストール方法：
+
+pnpm init                       # package.json 作成
+pnpm install                    # 依存をインストール（lock尊重）
+pnpm install --frozen-lockfile  # CI等でlock厳守
+
+pnpm add react                  # 依存追加
+pnpm add -D typescript          # 開発依存追加
+pnpm remove react               # 削除
+pnpm update                     # アップデート（範囲はsemverに従う）
+pnpm update --latest            # 可能な限り最新へ
+
+pnpm run dev                    # npm run と同じ（略して `pnpm dev` 可）
+pnpm run build
+pnpm run start
+
+pnpm exec next --version        # ローカルbin実行
+pnpm dlx create-next-app myapp  # 1回限りの実行（npx的）
+

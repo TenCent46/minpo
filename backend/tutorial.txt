@@ -1,0 +1,2 @@
+#uvicornを自動更新ありで起動する方法（--reloadをつける。）
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
