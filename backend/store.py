@@ -2,14 +2,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import List, Dict, Any
-from embeddings import embed
 from rank_bm25 import BM25Okapi
 import numpy as np
 import os
 DISABLE_EMBEDDINGS = os.getenv("RAG_EMBEDDINGS", "on").lower() in ("off", "0", "false")
 
 DATA_DIR = Path(__file__).parent / "data"
-SEED_PATH = DATA_DIR / "civilcode_seed.json"
+#SEED_PATH = DATA_DIR / "civilcode_seed.json"
 INGESTED_DIR = DATA_DIR / "ingested"
 
 class DocStore:
@@ -24,8 +23,8 @@ class DocStore:
         if INGESTED_DIR.exists():
             for p in sorted(INGESTED_DIR.glob("*.json")):
                 docs.extend(json.loads(p.read_text(encoding="utf-8")))
-        if SEED_PATH.exists():
-            docs.extend(json.loads(SEED_PATH.read_text(encoding="utf-8")))
+        #if SEED_PATH.exists():
+            #docs.extend(json.loads(SEED_PATH.read_text(encoding="utf-8")))
         # de-dup by id
         seen = set()
         out = []

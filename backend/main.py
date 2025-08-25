@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dotenv import load_dotenv
 load_dotenv()  # backend/.env を読み込む（最優先で読み込む）
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from store import STORE
@@ -85,3 +85,7 @@ def ingest_from_egov():
     # 再ロード
     STORE.load()
     return {"ingested": len(docs)}
+
+@app.get("/debug/echo")
+def debug_echo(q: str = "", request: Request = None):
+    return {"q": q, "headers": dict(request.headers) if request else {}}

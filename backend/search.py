@@ -22,7 +22,7 @@ def hybrid_search(query: str, top_k: int = 8) -> List[Dict[str, Any]]:
 
     bm_n = _minmax(bm)
 
-    score = 0.6 * cos_n + 0.4 * bm_n
+    #score = 0.6 * cos_n + 0.4 * bm_n
 
         # 埋め込みがあれば加点。なければ BM25 のみ。
     if STORE.embeddings is not None:

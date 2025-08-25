@@ -2,6 +2,9 @@ from __future__ import annotations
 import os
 from typing import List, Dict, Any
 
+# Avoid HF tokenizers fork warning / potential deadlocks when the server forks
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 def _get_provider_flags():
     prov = (os.getenv("LLM_PROVIDER", "").lower().strip() or "")
     use_openai_like = bool(
@@ -14,24 +17,98 @@ def _get_provider_flags():
 SYSTEM_PROMPT = (
     "あなたは日本の民法・判例を扱うリーガルアシスタントである。"
     "回答は与えられたコンテキストの範囲で、条文番号と要点を簡潔に説明し、"
-    "断定を避け、最後に『これは一般的情報であり法律助言ではない』旨を明記すること。"
+    "断定を避けること。"
+    "出典条文には天然果実及び法定果実条文番号を必ずつけ、複数ある場合には複数明記すること。"
+    "例：第八十八条（天然果実および法定果実）"
 )
 
 # ========== OpenAI互換（OpenAI / DeepSeek / Ollama / TGI） ==========
 def _chat_openai_like(messages: list[dict]) -> str:
     # openai>=1.x
     from openai import OpenAI
+
     client = OpenAI(
         api_key=os.getenv("OPENAI_API_KEY"),
         base_url=os.getenv("OPENAI_BASE_URL") or None,  # 無指定なら公式
     )
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    rsp = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=0,
-    )
-    return rsp.choices[0].message.content
+
+    # まずは環境変数があればそれを優先。なければ広く利用可能な安定モデルを既定にする。
+    model = os.getenv("OPENAI_MODEL") or "gpt-5"
+    wants_gpt5 = model.startswith("gpt-5")
+
+    try:
+        print("model",model)
+        print([m.id for m in client.models.list().data if "gpt-5" in m.id])
+
+        # 2) Responses API で最小リクエスト（ChatではなくResponses）
+        r = client.responses.create(model="gpt-5", input="OKだけ返して")
+        print(r.output_text)
+        """rsp = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0,
+        )"""
+        response = client.responses.create(
+            model="gpt-5",
+            input=[
+                    {
+                        "role": "user",
+                        "content": "Write a one-sentence bedtime story about a unicorn."
+                    }
+                ]
+            )
+        print("response", response)
+        #return rsp.choices[0].message.content
+        return response.output_text
+    except Exception as e:
+        # モデル未許可/廃止/タイプミスなどに備え、フォールバックを順に試す
+        err_msg = str(e)
+        print(err_msg)
+
+        # Fallback chain (kept small & practical)
+        fallbacks = []
+        if wants_gpt5:
+            # Prefer other gpt-5 variants first, then step down to 4o
+            gpt5_variants = ["gpt-5-mini", "gpt-5-nano", "gpt-5-chat-latest", "gpt-5"]
+            for v in gpt5_variants:
+                if v != model:
+                    fallbacks.append((v, True))   # prefer Responses API for gpt-5 family
+            # finally, step down to 4o chat
+            fallbacks.extend([("gpt-4o", False), ("gpt-4o-mini", False)])
+        else:
+            # try sibling mini/regular on chat
+            if model != "gpt-4o-mini":
+                fallbacks.append(("gpt-4o-mini", False))
+            if model != "gpt-4o":
+                fallbacks.append(("gpt-4o", False))
+
+        tried = []
+        last_err = None
+
+        def _try(fb_model: str, prefer_responses: bool) -> str:
+            tried.append((fb_model, prefer_responses))
+            if prefer_responses:
+                # Use Responses API
+                resp = client.responses.create(model=fb_model, input=messages[-1]["content"])
+                return resp.output_text
+            else:
+                rsp = client.chat.completions.create(
+                    model=fb_model,
+                    messages=messages,
+                    temperature=0,
+                )
+                return rsp.choices[0].message.content
+
+        for fb_model, fb_resp in fallbacks:
+            try:
+                return _try(fb_model, prefer_responses=fb_resp)
+            except Exception as e2:
+                last_err = e2
+                print(last_err)
+                continue
+        print(f"[openai-like] exhausted fallbacks; tried={tried}, last_error={last_err}")
+        # すべて失敗した場合はエラー内容を上位に伝える
+        raise RuntimeError(f"OpenAI-like chat failed for model '{model}': {err_msg}") from e
 
 # ========== Groq（SDK版） ==========
 def _chat_groq(messages: list[dict]) -> str:
@@ -76,21 +153,28 @@ def synthesize_answer(query: str, hits: List[Dict[str, Any]]) -> str:
         f"[参照]\n{context}\n\n[質問]\n{query}"
     )
     prov, use_openai_like = _get_provider_flags()
+
+    print("read synthesize answer")
     # 1) 明示プロバイダ
     if prov == "groq" and os.getenv("GROQ_API_KEY"):
+        print("read groq")
         return _chat_groq([
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ])
     if use_openai_like:
+        print("openai like")
         try:
             return _chat_openai_like([
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ])
-        except Exception:
-            pass  # fall back to extractive summary
+        except Exception as e:
+            print(f"openai_like_exception: {e}")
+            # fall back to extractive summary
+            pass
 
+    
     # 2) どれも無ければ抽出
     return _extractive_fallback(hits)
 
