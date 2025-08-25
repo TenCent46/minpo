@@ -37,10 +37,17 @@ def _startup():
 @app.get("/health")
 def health():
     return {"status": "ok", "docs": len(STORE)}
-
+""""
 @app.get("/search")
 def search(query: str = Query(..., description="自然言語の質問")):
-    return answer_query(query)
+    return answer_query(query)"""
+
+@app.get("/search")
+def search(
+    query: str = Query(..., description="自然言語の質問"),
+    mode: str | None = Query(None, description="empathetic|lawyer|neutral の将来拡張用")
+):
+    return answer_query(query, mode=mode)
 
 @app.get("/sources")
 def sources():

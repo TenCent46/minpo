@@ -2,6 +2,10 @@ from __future__ import annotations
 import os
 from typing import List, Dict, Any
 
+# backend/llm.py（追記）
+import json, re
+
+
 # Avoid HF tokenizers fork warning / potential deadlocks when the server forks
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
@@ -17,10 +21,12 @@ def _get_provider_flags():
 SYSTEM_PROMPT = (
     "あなたは日本の民法・判例を扱うリーガルアシスタントである。"
     "回答は与えられたコンテキストの範囲で、条文番号と要点を簡潔に説明し、"
-    "断定を避けること。"
-    "出典条文には天然果実及び法定果実条文番号を必ずつけ、複数ある場合には複数明記すること。"
+    "人間味のある回答をすること。"
+    "出典条文には条文番号及びその別名を必ずつけ、複数ある場合には複数明記すること。"
     "例：第八十八条（天然果実および法定果実）"
 )
+
+
 
 # ========== OpenAI互換（OpenAI / DeepSeek / Ollama / TGI） ==========
 def _chat_openai_like(messages: list[dict]) -> str:
@@ -29,7 +35,7 @@ def _chat_openai_like(messages: list[dict]) -> str:
 
     client = OpenAI(
         api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_BASE_URL") or None,  # 無指定なら公式
+        #base_url=os.getenv("OPENAI_BASE_URL") or None,  # 無指定なら公式
     )
 
     # まずは環境変数があればそれを優先。なければ広く利用可能な安定モデルを既定にする。
@@ -38,76 +44,22 @@ def _chat_openai_like(messages: list[dict]) -> str:
 
     try:
         print("model",model)
-        print([m.id for m in client.models.list().data if "gpt-5" in m.id])
-
-        # 2) Responses API で最小リクエスト（ChatではなくResponses）
-        r = client.responses.create(model="gpt-5", input="OKだけ返して")
-        print(r.output_text)
-        """rsp = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=0,
-        )"""
+  
         response = client.responses.create(
             model="gpt-5",
-            input=[
-                    {
-                        "role": "user",
-                        "content": "Write a one-sentence bedtime story about a unicorn."
-                    }
-                ]
+            input=messages,
+            reasoning={
+                     "effort": "minimal",
+                    #"summary": "auto" # auto, concise, or detailed, gpt-5 series do not support concise 
+            },
+            text={ 
+                    "verbosity": "low",}
             )
         print("response", response)
         #return rsp.choices[0].message.content
         return response.output_text
     except Exception as e:
-        # モデル未許可/廃止/タイプミスなどに備え、フォールバックを順に試す
         err_msg = str(e)
-        print(err_msg)
-
-        # Fallback chain (kept small & practical)
-        fallbacks = []
-        if wants_gpt5:
-            # Prefer other gpt-5 variants first, then step down to 4o
-            gpt5_variants = ["gpt-5-mini", "gpt-5-nano", "gpt-5-chat-latest", "gpt-5"]
-            for v in gpt5_variants:
-                if v != model:
-                    fallbacks.append((v, True))   # prefer Responses API for gpt-5 family
-            # finally, step down to 4o chat
-            fallbacks.extend([("gpt-4o", False), ("gpt-4o-mini", False)])
-        else:
-            # try sibling mini/regular on chat
-            if model != "gpt-4o-mini":
-                fallbacks.append(("gpt-4o-mini", False))
-            if model != "gpt-4o":
-                fallbacks.append(("gpt-4o", False))
-
-        tried = []
-        last_err = None
-
-        def _try(fb_model: str, prefer_responses: bool) -> str:
-            tried.append((fb_model, prefer_responses))
-            if prefer_responses:
-                # Use Responses API
-                resp = client.responses.create(model=fb_model, input=messages[-1]["content"])
-                return resp.output_text
-            else:
-                rsp = client.chat.completions.create(
-                    model=fb_model,
-                    messages=messages,
-                    temperature=0,
-                )
-                return rsp.choices[0].message.content
-
-        for fb_model, fb_resp in fallbacks:
-            try:
-                return _try(fb_model, prefer_responses=fb_resp)
-            except Exception as e2:
-                last_err = e2
-                print(last_err)
-                continue
-        print(f"[openai-like] exhausted fallbacks; tried={tried}, last_error={last_err}")
-        # すべて失敗した場合はエラー内容を上位に伝える
         raise RuntimeError(f"OpenAI-like chat failed for model '{model}': {err_msg}") from e
 
 # ========== Groq（SDK版） ==========
@@ -193,3 +145,143 @@ def llm_runtime_info() -> dict:
             "openai_like_key_present": bool(os.getenv("OPENAI_API_KEY")),
         })
     return info
+
+
+def llm_searchtext(query: str) -> List[str]:
+    prompt = (
+        "次の[質問]以下の内容を読んで質問の背景を理解し、民法に関して関連する検索ワードを出力してください。"
+        "出力は,で区切ってください。また出力は10個までとします。\n\n"
+        "例えば、「友達から死ねと言われた」に対して\n"
+        "脅迫,相続,遺産\n\n"
+        f"[質問]{query}"
+    )
+    prov, use_openai_like = _get_provider_flags()
+
+    result = ""
+
+    print("read synthesize answer")
+    # 1) 明示プロバイダ
+    if prov == "groq" and os.getenv("GROQ_API_KEY"):
+        print("read groq")
+        result= _chat_groq([
+            #{"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ])
+    elif use_openai_like:
+        print("openai like")
+        try:
+            result=_chat_openai_like([
+              #  {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ])
+        except Exception as e:
+            print(f"openai_like_exception: {e}")
+            # fall back to extractive summary
+            pass
+    print("llm_result", result)
+    if not isinstance(result, str):
+        result = str(result)
+    # unify commas and strip spaces/newlines
+    result = result.replace("，", ",").replace("\n", ",").replace("\r", ",")
+    split = [t.strip() for t in result.split(",") if t.strip()]
+    return split
+
+
+# 追加：Law Router（民法専門。刑法はNOに振り分け）
+import json, re
+
+ROUTER_SYSTEM = (
+    "あなたは日本の法律質問を分類するルータです。"
+    "出力は必ずJSONのみ。余計な文章は禁止。"
+    "domain は 'civil'（民法）'criminal'（刑法）'mixed'（両方）'other' のいずれか。"
+    "civil の場合は civil_topics（例: ['不法行為','名誉毀損','相続']）、"
+    "law_hints は民法内の候補条文（番号 or 別名）を列挙（例: [{'article':'709','alias':'不法行為'}, ...]）。"
+    "search_terms はBM25向けの語句配列。"
+    "例：{'domain':'civil','civil_topics':['不法行為'],'law_hints':[{'article':'709','alias':'不法行為'},{'article':'710','alias':'慰謝料'}],'search_terms':['人格権','名誉','慰謝料']}"
+)
+
+def _json_from_text(s: str) -> dict:
+    # 最初と最後の波括弧の間をJSONとして抽出
+    m = re.search(r"\{.*\}", s, re.S)
+    if not m: 
+        return {}
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        # 末尾カンマ/単引用など軽微な崩れは修正を試みても良いが、まずは素通し
+        return {}
+
+def llm_route(query: str) -> dict:
+    msg = [
+        {"role": "system", "content": ROUTER_SYSTEM},
+        {"role": "user",   "content": f"質問: {query}\n厳格JSONで返答。"}
+    ]
+    # Groq固定
+    result = _chat_groq(msg)
+    data = _json_from_text(result) or {}
+    # 最低限の形に正規化
+    data.setdefault("domain", "other")
+    data.setdefault("civil_topics", [])
+    data.setdefault("law_hints", [])
+    data.setdefault("search_terms", [])
+    # 文字列化
+    for h in data["law_hints"]:
+        if "article" in h:
+            h["article"] = str(h["article"])
+    return data
+
+
+ANSWER_SYSTEM = (
+    "あなたは日本の民法に関するリーガルアシスタント。"
+    "与えたコンテキスト内の条文だけを根拠に、"
+    "要点→注意点→参照条文 の順で簡潔に回答。"
+    "断定を避け、最後に『一般的情報であり法律助言ではない』と明記。"
+    "出典条文には条文番号と別名を複数あれば列挙（例：第七百九条（不法行為による損害賠償））。"
+)
+
+def llm_answer_from_context(query: str, hits: List[Dict[str, Any]]) -> str:
+    ctx = "\n\n".join([f"【{h.get('article','?')}】\n{h['text']}" for h in hits])
+    prompt = (
+        f"[質問]\n{query}\n\n"
+        f"[参照コンテキスト]\n{ctx}\n\n"
+        "上記の範囲内だけで回答してください。"
+    )
+    return _chat_groq([
+        {"role": "system", "content": ANSWER_SYSTEM},
+        {"role": "user", "content": prompt},
+    ])
+
+
+def _json_pick(s: str) -> dict|list:
+    m = re.search(r"\{.*\}|\[.*\]", s, re.S)
+    if not m: return {}
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        return {}
+
+PICK_SYSTEM = (
+    "あなたは与えられた候補条文リストの中から、回答の根拠として実際に使用した条文だけを厳格に選ぶ係です。"
+    "出力は必ず JSON（配列）で、各要素は候補の id を文字列で返すこと。余計な文章は一切禁止。"
+)
+
+def llm_pick_used_articles(answer_text: str, hits: list[dict]) -> list[str]:
+    """
+    hits: [{'id': 'civilcode:709', 'article': '第709条...', 'text': '…'}, ...]
+    """
+    # 候補をLLMに渡す（id と article だけ掲示）→ JSON配列の id[]
+    cand_view = "\n".join([f"- id:{h['id']} / {h.get('article','')}" for h in hits])
+    prompt = (
+        "以下はあなたが作成した回答本文と、候補条文の一覧です。"
+        "回答本文の中で実際に根拠として使った条文だけを、候補一覧の id で返してください。\n\n"
+        f"[回答本文]\n{answer_text}\n\n[候補条文]\n{cand_view}\n\n"
+        "JSON配列のみを返し、他のテキストは出力しないでください。例：[\"civilcode:709\",\"civilcode:710\"]"
+    )
+    s = _chat_groq([
+        {"role":"system","content": PICK_SYSTEM},
+        {"role":"user","content": prompt},
+    ])
+    data = _json_pick(s)
+    if isinstance(data, list):
+        return [str(x) for x in data if isinstance(x,(str,int))]
+    return []

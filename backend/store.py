@@ -39,12 +39,13 @@ class DocStore:
             #self.embeddings = embed(self.texts)
             tokenized = [list(d["text"]) for d in self.docs]  # char-level for 日本語BM25の簡易実装
             self.bm25 = BM25Okapi(tokenized)
-
+            print("embeddings are used : ",DISABLE_EMBEDDINGS)
              # 埋め込みは「任意」。失敗しても落ちない
             if not DISABLE_EMBEDDINGS:
                 try:
                     from embeddings import embed
                     self.embeddings = embed(self.texts)
+                    print("embed success!")
                 except Exception as e:
                     # 起動を止めない：ログだけ残し、ベクトル無しで運転
                     print(f"[WARN] embeddings disabled due to error: {e}")
