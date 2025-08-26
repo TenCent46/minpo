@@ -1,12 +1,27 @@
-fastapi==0.111.0
-uvicorn[standard]==0.30.1
-numpy==1.26.4
+# --- Web API & 基盤 ---
+fastapi==0.116.1          # 2025-08時点の最新安定系。型まわり/依存の変更は軽微。  [oai_citation:0‡worksapplications.github.io](https://worksapplications.github.io/sudachi.rs/python/api/sudachipy.html?utm_source=chatgpt.com)
+uvicorn[standard]==0.35.0 # ASGIサーバ。watchfiles/httptools等入りの標準extra。 
+
+# --- 数値/検索 ---
+numpy==1.26.4             # 既存の scikit-learn==1.4.2 と相性◎（2.xは避ける）
 scikit-learn==1.4.2
 rank-bm25==0.2.2
+
+# --- 文章ベクトル ---
 sentence-transformers==2.7.0
-pydantic==2.7.1
-httpx==0.27.0
-lxml==5.2.2
+# ↑ PyTorch を引くので Docker イメージが肥大化します（>1GB 想定）。軽量化は後述。
+
+# --- HTTP/XML/設定 ---
+httpx==0.27.2             # 0.28 系の破壊的変更を避ける/SDK互換のため。  [oai_citation:1‡DEV Community](https://dev.to/mathewthe2/making-a-japanese-dictionary-lookup-tool-with-sudachi-in-python-4k9i?utm_source=chatgpt.com)
+lxml==5.3.0               # e-Gov XML 解析用（5.3.0 は 2025-08の最新）  [oai_citation:2‡dampfkraft.com](https://www.dampfkraft.com/nlp/how-to-tokenize-japanese.html?utm_source=chatgpt.com)
 python-dotenv==1.0.1
-openai>=1.101.0
-groq>=0.5.0
+pydantic==2.7.1
+
+# --- LLM クライアント ---
+openai==1.101.0           # 1.x 系最新（2025-08-21）。responses API 等の変更込み。  [oai_citation:3‡PyPI](https://pypi.org/project/openai/?utm_source=chatgpt.com) [oai_citation:4‡GitHub](https://github.com/openai/openai-python/releases?utm_source=chatgpt.com)
+groq==0.31.0              # Groq SDK 最新（2025-08-05）。  [oai_citation:5‡PyPI](https://pypi.org/project/groq/?utm_source=chatgpt.com)
+
+# --- 日本語トークナイズ/正規化（Sudachi） ---
+SudachiPy==0.6.10         # 2025-01 リリース。  [oai_citation:6‡PyPI](https://pypi.org/project/SudachiPy/0.3.12/?utm_source=chatgpt.com)
+sudachidict-core==20250515
+jaconv==0.4.0             # かな/全角半角の正規化に利用。  [oai_citation:7‡Piwheels](https://www.piwheels.org/project/jaconv/?utm_source=chatgpt.com)
