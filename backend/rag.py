@@ -52,9 +52,9 @@ def answer_query(query: str, mode: str | None = None) -> Dict[str, Any]:
     #print("used sources : ", used_sources)
 
     if domain in ("criminal","other"):
-        warnings = ["AIの出力は法的助言ではない。個別事情は弁護士へ。", *detect_risk_flags(query)]
-    else:
         warnings = ["この内容は民法の範囲を超える可能性が高いです。他の法律を包括的に考える場合は別ツールの採用または弁護士への相談をしてください。", *detect_risk_flags(query)]
+    else:
+        warnings = ["AIの出力は法的助言ではない。個別事情は弁護士へ。", *detect_risk_flags(query)]
     return {
         "answer": answer,
         "warnings": warnings,
