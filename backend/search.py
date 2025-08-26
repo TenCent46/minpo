@@ -1,4 +1,3 @@
-# File: backend/search.py
 from __future__ import annotations
 from typing import List, Dict, Any
 import numpy as np
@@ -15,6 +14,13 @@ LEGAL_CANON = {
     "誹謗中傷": "名誉 毀損",   # 相談語→法語へ寄せる
     "ストーカー": "つきまとい"  # 参考（表記差）
 }
+
+PAIR_BONUS = {
+    709: [710, 723, 719],  # 不法行為 → 慰謝料・名誉回復・共同不法行為
+    710: [709, 723],
+    723: [709, 710],
+}
+
 def expand_canonical(tokens: list[str]) -> list[str]:
     out = list(tokens)
     for t in list(tokens):
@@ -220,28 +226,48 @@ def retrieve_candidates(query: str, law_hints: list[dict], search_terms: list[st
 
     print("rrf",rrf)
 
+
+    try:
+    # 候補ごとに article_num を引く
+        article_nums = []
+        for i, d in enumerate(STORE.docs):
+            n = d.get("article_num")
+            article_nums.append(int(n) if isinstance(n, (int, float, str)) and str(n).isdigit() else None)
+
+    # 上位に 709/710/723 が居たら、対応ペアにボーナス
+        bonus = np.zeros_like(rrf, dtype=float)
+        top_pre = np.argsort(rrf)[::-1][:50]  # 上位50を見て関係を張る
+        present = set([article_nums[j] for j in top_pre if article_nums[j] is not None])
+
+        for base in list(present):
+            neighbors = PAIR_BONUS.get(base, [])
+            for nb in neighbors:
+            # その条文番号のインデックス（複数ありうるが通常1件）
+                for j, n in enumerate(article_nums):
+                    if n == nb:
+                        bonus[j] += 0.4  # 係数は適宜。0.3〜0.6で手応えを見て
+        rrf = rrf + bonus
+    except Exception:
+        pass
+
     cand = np.argsort(rrf)[::-1][:max(top_k, 8)]
 
-    # MMR でダイバーシティ（埋込がある場合）
-    if use_mmr and cos is not None:
-        emb = STORE.embeddings
-        selected = []
-        pool = list(cand)
-        # 初手は最大cos
-        first = pool[int(np.argmax(cos[pool]))]
-        selected.append(first); pool.remove(first)
-        while pool and len(selected)<8:
-            best_j, best_val = None, -1e9
-            for j in pool:
-                rel = emb[j] @ q_vec
-                div = np.max(emb[j] @ emb[selected].T)
-                val = 0.75*rel - 0.25*div
-                if val>best_val:
-                    best_val, best_j = val, j
-            selected.append(best_j); pool.remove(best_j)
-        final_idx = selected
-    else:
-        final_idx = cand[:8]
+    # MMR を使わず、単純な上位選択 + 条文番号での重複除外に切り替え
+    # より安定・低遅延で、法令ドキュメントでは重複（同条異片）を抑えやすい
+    # 上位候補を広めにとってから、article_num でユニーク化
+    pool = list(np.argsort(rrf)[::-1][:max(top_k * 4, 32)])
+    final_idx = []
+    seen_nums = set()
+    for j in pool:
+        num = STORE.docs[j].get("article_num")
+        # article_num が同じものは一つにまとめる（なければ id でフォールバック）
+        key = int(num) if isinstance(num, (int, float, str)) and str(num).isdigit() else STORE.docs[j].get("id")
+        if key in seen_nums:
+            continue
+        seen_nums.add(key)
+        final_idx.append(j)
+        if len(final_idx) >= max(8, top_k):
+            break
 
     results = []
     for i in final_idx:
@@ -250,9 +276,3 @@ def retrieve_candidates(query: str, law_hints: list[dict], search_terms: list[st
         results.append(d)
     print("results",results)
     return results
-
-# File: backend/rag.py
-# (Only the relevant line changed)
-# Original:
-# hits = retrieve_candidates(query, route.get("law_hints", []))
-# Changed to:

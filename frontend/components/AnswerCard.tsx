@@ -71,7 +71,7 @@ export default function AnswerCard({ data }: { data: AnswerPayload | any }) {
       </section>
 
       <section style={{ marginTop: 16 }}>
-        <h3>その他関連する可能性の条文</h3>
+        <h3>その他関連する可能性のある条文</h3>
         {(!relatedList || relatedList.length === 0) ? (
           <div style={{ opacity: .7 }}>（該当なし）</div>
         ) : (
