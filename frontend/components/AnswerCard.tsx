@@ -1,4 +1,5 @@
 // frontend/components/AnswerCard.tsx（差し替え）
+import { STATIC_STATUS_PAGE_GET_INITIAL_PROPS_ERROR } from "next/dist/lib/constants";
 import LawCard from "./LawCard";
 
 export default function AnswerCard({ data }: { data: any }) {
@@ -18,6 +19,7 @@ export default function AnswerCard({ data }: { data: any }) {
       )}
 
       <h3 style={{ marginTop: 16 }}>出典条文</h3>
+      <h5 style={{ marginTop: 16 }}>クリックして全文を表示できます。</h5>
       {list?.length === 0 ? (
         <div style={{ opacity: .7 }}>（該当なし）</div>
       ) : (
@@ -30,6 +32,21 @@ export default function AnswerCard({ data }: { data: any }) {
           }}
         >
           {list.map((s: any) => <LawCard key={s.id} law={s} />)}
+        </div>
+      )}
+            <h3 style={{ marginTop: 16 }}>その他関連する可能性の条文</h3>
+            {sources?.length === 0 ? (
+        <div style={{ opacity: .7 }}>（該当なし）</div>
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            overflowX: "auto",
+            paddingBottom: 8,
+          }}
+        >
+          {sources.map((s: any) => <LawCard key={s.id} law={s} />)}
         </div>
       )}
     </div>

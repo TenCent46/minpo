@@ -24,7 +24,7 @@ export default function Page() {
         <p style={{opacity:.8}}>
         専門用語/口語どちらでも可。根拠条文を引用して簡潔に回答。
         {" "}
-        <a href="https://laws.e-gov.go.jp/search/ELawsSearch/lsg0100/" target="_blank" rel="noreferrer">
+        <a href="https://laws.e-gov.go.jp/law/129AC0000000089" target="_blank" rel="noreferrer">
           e‑Gov法令検索を開く
         </a>
       </p>

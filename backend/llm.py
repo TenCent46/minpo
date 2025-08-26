@@ -214,7 +214,7 @@ def _json_from_text(s: str) -> dict:
 def llm_route(query: str) -> dict:
     msg = [
         {"role": "system", "content": ROUTER_SYSTEM},
-        {"role": "user",   "content": f"質問: {query}\n厳格JSONで返答。"}
+        {"role": "user",   "content": f"質問: {query}これは民法ではどう扱われる？\n厳格JSONで返答。"}
     ]
     # Groq固定
     result = _chat_groq(msg)
@@ -275,7 +275,7 @@ def llm_pick_used_articles(answer_text: str, hits: list[dict]) -> list[str]:
         "以下はあなたが作成した回答本文と、候補条文の一覧です。"
         "回答本文の中で実際に根拠として使った条文だけを、候補一覧の id で返してください。\n\n"
         f"[回答本文]\n{answer_text}\n\n[候補条文]\n{cand_view}\n\n"
-        "JSON配列のみを返し、他のテキストは出力しないでください。例：[\"civilcode:709\",\"civilcode:710\"]"
+        "JSON配列のみを返し、他のテキストは出力しないでください。例：[\"civilcode:第二百十六条\",\"civilcode:第二百五十八条の二\"]"
     )
     s = _chat_groq([
         {"role":"system","content": PICK_SYSTEM},

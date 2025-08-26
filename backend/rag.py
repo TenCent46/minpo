@@ -11,7 +11,7 @@ def answer_query(query: str, mode: str | None = None) -> Dict[str, Any]:
     route = llm_route(query)
     domain = route.get("domain","other")
     print("route : ",route)
-
+    """
     if domain in ("criminal","other"):
         msg = (
             "ご相談ありがとうございます。この内容は民法の範囲を超える可能性が高いため、ここでは具体的判断を行いません。\n\n"
@@ -24,16 +24,19 @@ def answer_query(query: str, mode: str | None = None) -> Dict[str, Any]:
             "sources": [],
             "used_sources": []
         }
-
+"""
     # 取得（ヒント優先 + RRF/MMR 補完）
-    hits = retrieve_candidates(query, route.get("law_hints", []))  # 8件程度
+    #hits = retrieve_candidates(query, route.get("law_hints", []))  # 8件程度
+    hits = retrieve_candidates(query, route.get("law_hints", []), route.get("search_terms", []), route.get("civil_topics", []))
     # 回答
     answer = llm_answer_from_context(query, hits[:4])
     # 使用条文の選定（id配列）
     used_ids = llm_pick_used_articles(answer, hits)
+    ##print("hits : ", hits)
 
     # used_sources を構築（フロントがそれだけカード化できるように）
     used_map = {h["id"]: h for h in hits}
+    #print("used_map : ", used_map)
     used_sources = []
     for uid in used_ids:
         if uid in used_map:
@@ -46,7 +49,12 @@ def answer_query(query: str, mode: str | None = None) -> Dict[str, Any]:
                 "score": h.get("score", 0.0),
             })
 
-    warnings = ["AIの出力は法的助言ではない。個別事情は弁護士へ。", *detect_risk_flags(query)]
+    #print("used sources : ", used_sources)
+
+    if domain in ("criminal","other"):
+        warnings = ["AIの出力は法的助言ではない。個別事情は弁護士へ。", *detect_risk_flags(query)]
+    else:
+        warnings = ["この内容は民法の範囲を超える可能性が高いです。他の法律を包括的に考える場合は別ツールの採用または弁護士への相談をしてください。", *detect_risk_flags(query)]
     return {
         "answer": answer,
         "warnings": warnings,

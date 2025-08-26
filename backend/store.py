@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+from jp_tokenize  import ja_tokens, normalize_text
 from pathlib import Path
 from typing import List, Dict, Any
 from rank_bm25 import BM25Okapi
@@ -17,6 +18,8 @@ class DocStore:
         self.texts: List[str] = []
         self.embeddings = None
         self.bm25 = None
+        self.tokenized_docs = None
+        self.vocab = None
 
     def load(self):
         docs = []
@@ -37,8 +40,10 @@ class DocStore:
         # vector + bm25
         if self.texts:
             #self.embeddings = embed(self.texts)
-            tokenized = [list(d["text"]) for d in self.docs]  # char-level for 日本語BM25の簡易実装
+            tokenized = [ja_tokens(normalize_text(d["text"])) for d in self.docs]
             self.bm25 = BM25Okapi(tokenized)
+            self.tokenized_docs = tokenized
+            self.vocab = set(sum(tokenized, []))
             print("embeddings are used : ",DISABLE_EMBEDDINGS)
              # 埋め込みは「任意」。失敗しても落ちない
             if not DISABLE_EMBEDDINGS:
